@@ -58,6 +58,8 @@ tags:
     description: Tag listing and search across a location
   - name: Items
     description: Item search across all bins in a location
+  - name: StagedPurchases
+    description: Purchases waiting to be put in a bin ("To Be Sorted") — online orders from any store and in-store photos
   - name: Batch
     description: Execute multiple bin operations in a single transaction
   - name: Health
@@ -531,6 +533,75 @@ components:
           type: boolean
           description: Whether the current user has pinned this bin
 
+    BinSuggestion:
+      type: object
+      properties:
+        bin_id: { type: string }
+        bin_name: { type: string }
+        area_name: { type: string }
+        icon: { type: string }
+        color: { type: string }
+        reason:
+          type: string
+          enum: [history, order, shopping_list, match]
+          description: history = this product was put here before; order = other items from the same order are here; shopping_list = on the shopping list from this bin; match = shares words with the bin's name, tags or items
+        detail: { type: string, description: Short human-readable reason }
+        score: { type: number }
+        confident: { type: boolean, description: False for single-word matches }
+    StagedPurchase:
+      type: object
+      properties:
+        id: { type: string }
+        location_id: { type: string }
+        source: { type: string, description: 'Short id of where it came from, e.g. "amazon", "home-depot", "photo"' }
+        store: { type: string }
+        order_ref: { type: string }
+        title: { type: string, description: Full listing title }
+        name: { type: string, description: Short inventory name (becomes the bin item name) }
+        quantity: { type: integer, nullable: true }
+        price: { type: number, nullable: true }
+        currency: { type: string, nullable: true }
+        purchased_at: { type: string, nullable: true }
+        product_url: { type: string, nullable: true }
+        image_url: { type: string, nullable: true }
+        has_photo: { type: boolean, description: 'Photo available at GET /staged-purchases/{id}/photo' }
+        delivered: { type: boolean }
+        status: { type: string, enum: [pending, sorted, skipped] }
+        skip_reason: { type: string, nullable: true, enum: [user, auto, cancelled, null] }
+        sorted_bin_id: { type: string, nullable: true }
+        sorted_bin_name: { type: string, nullable: true }
+        resolved_at: { type: string, nullable: true }
+        created_at: { type: string }
+        suggestions:
+          type: array
+          items: { $ref: '#/components/schemas/BinSuggestion' }
+    StagedIngestResult:
+      type: object
+      properties:
+        created: { type: integer }
+        updated: { type: integer }
+        unchanged: { type: integer }
+        auto_skipped: { type: integer }
+        ids: { type: array, items: { type: string } }
+    StagedPurchaseInput:
+      type: object
+      required: [source, title]
+      properties:
+        source: { type: string, description: 'Lowercase id, e.g. "amazon"' }
+        external_id: { type: string, description: 'Stable id per line item; re-sending the same source + external_id updates instead of duplicating' }
+        product_key: { type: string, description: 'Product identity used to learn from past sorts/skips (e.g. "amazon:B0..."). Defaults to source + normalized title.' }
+        store: { type: string }
+        order_ref: { type: string }
+        title: { type: string }
+        name: { type: string, description: Defaults to a shortened title }
+        quantity: { type: integer }
+        price: { type: number }
+        currency: { type: string }
+        purchased_at: { type: string, description: ISO date }
+        product_url: { type: string }
+        image_url: { type: string, description: 'Fetched once by the server (https, public hosts only) and served from storage' }
+        delivered: { type: boolean, default: true }
+        cancelled: { type: boolean, description: Skips a still-pending entry }
     BinItem:
       type: object
       properties:
@@ -6637,6 +6708,193 @@ paths:
   # ════════════════════════════════════════════════════════
   # Batch
   # ════════════════════════════════════════════════════════
+  /locations/{locationId}/staged-purchases:
+    get:
+      tags: [StagedPurchases]
+      summary: List purchases by status
+      description: Pending ones include up to 3 bin suggestions, limited to bins the caller can add items to.
+      parameters:
+        - { name: locationId, in: path, required: true, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, sorted, skipped], default: pending } }
+      responses:
+        '200':
+          description: Purchases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results: { type: array, items: { $ref: '#/components/schemas/StagedPurchase' } }
+                  count: { type: integer }
+    post:
+      tags: [StagedPurchases]
+      summary: Add purchases from any store (feeders use an API key)
+      description: Idempotent per source + external_id. A product you skipped before is skipped automatically.
+      parameters:
+        - { name: locationId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purchases]
+              properties:
+                purchases: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/StagedPurchaseInput' } }
+      responses:
+        '200': { description: Nothing new, content: { application/json: { schema: { $ref: '#/components/schemas/StagedIngestResult' } } } }
+        '201': { description: Some created, content: { application/json: { schema: { $ref: '#/components/schemas/StagedIngestResult' } } } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /locations/{locationId}/staged-purchases/count:
+    get:
+      tags: [StagedPurchases]
+      summary: Number waiting to be sorted
+      parameters:
+        - { name: locationId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending: { type: integer }
+                  awaiting_delivery: { type: integer }
+  /locations/{locationId}/staged-purchases/photo:
+    post:
+      tags: [StagedPurchases]
+      summary: Add an in-store purchase from a photo
+      description: The AI (vision task) names the item unless `name` is given.
+      parameters:
+        - { name: locationId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo: { type: string, format: binary }
+                name: { type: string }
+                store: { type: string }
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  purchase: { $ref: '#/components/schemas/StagedPurchase' }
+  /locations/{locationId}/staged-purchases/receipt:
+    post:
+      tags: [StagedPurchases]
+      summary: Add the items from an order email (any store)
+      description: The AI (quickText task) extracts line items. Items are keyed by order number + title, so a store's confirmation, shipped and delivered emails update one entry.
+      parameters:
+        - { name: locationId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message_id, text]
+              properties:
+                message_id: { type: string }
+                from: { type: string }
+                subject: { type: string }
+                text: { type: string, description: Email body as text (truncated to 30000 chars) }
+                received_at: { type: string }
+      responses:
+        '200': { description: Not a purchase, or nothing new }
+        '201': { description: Items created }
+  /staged-purchases/{id}/sort:
+    post:
+      tags: [StagedPurchases]
+      summary: Put it in a bin (creates a bin item)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [binId]
+              properties:
+                binId: { type: string }
+                name: { type: string }
+                quantity: { type: integer, nullable: true }
+      responses:
+        '200': { description: Sorted }
+        '409': { description: Already sorted or skipped }
+  /staged-purchases/bulk-sort:
+    post:
+      tags: [StagedPurchases]
+      summary: Put several in one bin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, binId]
+              properties:
+                ids: { type: array, maxItems: 100, items: { type: string } }
+                binId: { type: string }
+      responses:
+        '200': { description: Sorted }
+  /staged-purchases/{id}/skip:
+    post:
+      tags: [StagedPurchases]
+      summary: Not storing this (the same product is skipped automatically next time)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Skipped }
+  /staged-purchases/bulk-skip:
+    post:
+      tags: [StagedPurchases]
+      summary: Skip several
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: { type: array, maxItems: 100, items: { type: string } }
+      responses:
+        '200': { description: Skipped }
+  /staged-purchases/{id}/restore:
+    post:
+      tags: [StagedPurchases]
+      summary: Undo a sort (moves the bin item to trash) or a skip
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Back to pending }
+  /staged-purchases/{id}/photo:
+    get:
+      tags: [StagedPurchases]
+      summary: The item's photo (in-store photo, or the store's product image fetched once and cached)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Image }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /staged-purchases/{id}:
+    delete:
+      tags: [StagedPurchases]
+      summary: Delete an entry (and its photo)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Deleted }
   /batch:
     post:
       tags: [Batch]

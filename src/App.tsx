@@ -111,6 +111,9 @@ const CheckoutsPage = lazyWithRetry(() =>
 const ShoppingListPage = lazyWithRetry(() =>
   import('@/features/shopping-list/ShoppingListPage').then((m) => ({ default: m.ShoppingListPage }))
 );
+const ToBeSortedPage = lazyWithRetry(() =>
+  import('@/features/to-sort/ToBeSortedPage').then((m) => ({ default: m.ToBeSortedPage }))
+);
 
 const TrashPage = lazyWithRetry(() =>
   import('@/features/bins/TrashPage').then((m) => ({ default: m.TrashPage }))
@@ -433,6 +436,7 @@ export default function App() {
                 <Route path="/items" element={<RouteWithBoundary><ItemsPage /></RouteWithBoundary>} />
                 <Route path="/checkouts" element={<RouteWithBoundary><CheckoutsPage /></RouteWithBoundary>} />
                 <Route path="/shopping-list" element={<RouteWithBoundary><ShoppingListPage /></RouteWithBoundary>} />
+                <Route path="/to-sort" element={<RouteWithBoundary><ToBeSortedPage /></RouteWithBoundary>} />
                 <Route path="/locations" element={<RouteWithBoundary><AreasPage /></RouteWithBoundary>} />
                 <Route path="/trash" element={<Navigate to="/settings/trash" replace />} />
                 <Route path="/activity" element={<Navigate to="/settings/activity" replace />} />

@@ -30,6 +30,7 @@ const TABLES = [
   'attachments',
   'bin_custom_field_values',
   'bin_items',
+  'staged_purchases',
   'bin_shares',
   'item_checkouts',
   'bins',

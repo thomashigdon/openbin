@@ -140,6 +140,41 @@ CREATE INDEX IF NOT EXISTS idx_shopping_list_items_location
 CREATE INDEX IF NOT EXISTS idx_shopping_list_items_bin
   ON shopping_list_items(origin_bin_id);
 
+-- Purchases waiting to be put away (online orders, in-store photos)
+CREATE TABLE IF NOT EXISTS staged_purchases (
+  id              TEXT PRIMARY KEY,
+  location_id     TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
+  source          TEXT NOT NULL,
+  external_id     TEXT,
+  product_key     TEXT,
+  store           TEXT NOT NULL DEFAULT '',
+  order_ref       TEXT NOT NULL DEFAULT '',
+  title           TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  quantity        INTEGER,
+  price           DOUBLE PRECISION,
+  currency        TEXT,
+  purchased_at    TEXT,
+  product_url     TEXT,
+  image_url       TEXT,
+  photo_key       TEXT,
+  delivered       INTEGER NOT NULL DEFAULT 1,
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sorted', 'skipped')),
+  skip_reason     TEXT,
+  sorted_bin_id   TEXT REFERENCES bins(id) ON DELETE SET NULL DEFERRABLE INITIALLY IMMEDIATE,
+  sorted_item_id  TEXT,
+  resolved_by     TEXT REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at     TEXT,
+  created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at      TEXT NOT NULL DEFAULT (NOW()),
+  updated_at      TEXT NOT NULL DEFAULT (NOW()),
+  UNIQUE(location_id, source, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_staged_purchases_location_status
+  ON staged_purchases(location_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_staged_purchases_product_key
+  ON staged_purchases(location_id, product_key);
+
 CREATE TABLE IF NOT EXISTS photos (
   id            TEXT PRIMARY KEY,
   bin_id        TEXT NOT NULL REFERENCES bins(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,

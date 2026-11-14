@@ -14,6 +14,7 @@ export const Events = {
   BIN_USAGE: 'bin-usage-changed',
   ATTACHMENTS: 'attachments-changed',
   SHOPPING_LIST: 'shopping-list-changed',
+  STAGED_PURCHASES: 'staged-purchases-changed',
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

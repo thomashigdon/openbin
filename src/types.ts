@@ -439,3 +439,42 @@ export interface ShoppingListEntry {
   created_by_name: string;
   created_at: string;
 }
+
+export interface BinSuggestion {
+  bin_id: string;
+  bin_name: string;
+  area_name: string;
+  icon: string;
+  color: string;
+  reason: 'history' | 'order' | 'shopping_list' | 'match';
+  detail: string;
+  score: number;
+  /** False for a single-word match: shown, but not as the one-tap primary choice. */
+  confident: boolean;
+}
+
+/** A purchase (online order line or in-store photo) waiting to be put in a bin. */
+export interface StagedPurchase {
+  id: string;
+  location_id: string;
+  source: string;
+  store: string;
+  order_ref: string;
+  title: string;
+  name: string;
+  quantity: number | null;
+  price: number | null;
+  currency: string | null;
+  purchased_at: string | null;
+  product_url: string | null;
+  image_url: string | null;
+  has_photo: boolean;
+  delivered: boolean;
+  status: 'pending' | 'sorted' | 'skipped';
+  skip_reason: string | null;
+  sorted_bin_id: string | null;
+  sorted_bin_name: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  suggestions: BinSuggestion[];
+}

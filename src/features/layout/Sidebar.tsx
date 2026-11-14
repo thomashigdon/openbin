@@ -1,7 +1,8 @@
-import { Boxes, ClipboardList, LayoutDashboard, LogOut, MapPin, Package, PackageSearch, PanelLeftClose, PanelLeftOpen, Printer, ScanLine, Settings, ShoppingCart, Tags } from
+import { Boxes, ClipboardList, LayoutDashboard, LogOut, MapPin, Package, PackagePlus, PackageSearch, PanelLeftClose, PanelLeftOpen, Printer, ScanLine, Settings, ShoppingCart, Tags } from
   'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { BrandIcon } from '@/components/BrandIcon';
+import { useStagedCount } from '@/features/to-sort/useStagedPurchases';
 import { useAppSettings } from '@/lib/appSettings';
 import { useAuth } from '@/lib/auth';
 import type { TermKey } from '@/lib/navItems';
@@ -27,6 +28,7 @@ const topItems: { path: string; label: string; icon: React.ComponentType<{ class
 type NavItem = { path: string; label: string; icon: React.ComponentType<{ className?: string }>; termKey?: TermKey; requireWrite?: boolean; proOnly?: boolean };
 
 const manageItems: NavItem[] = [
+  { path: '/to-sort', label: 'To Be Sorted', icon: PackagePlus },
   { path: '/locations', label: 'Locations', icon: MapPin, termKey: 'Locations' },
   { path: '/items', label: 'Items', icon: ClipboardList },
   { path: '/checkouts', label: 'Checked Out', icon: PackageSearch },
@@ -53,7 +55,7 @@ function SectionLabel({ children, collapsed }: { children: React.ReactNode; coll
   );
 }
 
-function NavButton({ path, label, icon: Icon, currentPath, navigate, onClick, collapsed, proBadge }: {
+function NavButton({ path, label, icon: Icon, currentPath, navigate, onClick, collapsed, proBadge, count }: {
   path: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -62,6 +64,8 @@ function NavButton({ path, label, icon: Icon, currentPath, navigate, onClick, co
   onClick?: () => void;
   collapsed?: boolean;
   proBadge?: boolean;
+  /** Small count pill (e.g. purchases waiting to be sorted). Hidden when 0. */
+  count?: number;
 }) {
   const isActive = path === '/bins'
     ? currentPath === '/bins' || currentPath.startsWith('/bin/')
@@ -82,10 +86,21 @@ function NavButton({ path, label, icon: Icon, currentPath, navigate, onClick, co
           : 'border-transparent text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]'
       )}
     >
-      <Icon className={cn('h-5 w-5 shrink-0', isActive && 'text-[var(--accent)]')} />
+      <span className="relative shrink-0">
+        <Icon className={cn('h-5 w-5', isActive && 'text-[var(--accent)]')} />
+        {!!count && collapsed && (
+          <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-[var(--accent)]" aria-hidden />
+        )}
+      </span>
       <span className={cn('truncate', collapsed && 'w-0 opacity-0')} aria-hidden={collapsed || undefined}>
         {label}
       </span>
+      {!!count && !collapsed && (
+        <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-[var(--accent)] text-[var(--text-on-accent)] text-[11px] font-semibold flex items-center justify-center shrink-0">
+          {count > 99 ? '99+' : count}
+          <span className="sr-only"> waiting</span>
+        </span>
+      )}
       {proBadge && !collapsed && (
         <span className="ml-auto text-[10px] font-semibold text-[var(--text-tertiary)] shrink-0">Pro</span>
       )}
@@ -113,6 +128,7 @@ export function SidebarContent({ locations, activeLocationId, onLocationChange, 
   const { canWrite } = usePermissions();
   const { isSelfHosted, isFree } = usePlan();
   const showProBadges = !isSelfHosted && isFree;
+  const toSortCount = useStagedCount(activeLocationId);
 
   return (
     <>
@@ -143,7 +159,7 @@ export function SidebarContent({ locations, activeLocationId, onLocationChange, 
           <div className="space-y-1">
             {manageItems.map((item) => (
               <NavButton key={item.path} {...item} label={item.termKey ? t[item.termKey] : item.label} currentPath={location.pathname} navigate={navigate}
-                onClick={onItemClick} collapsed={collapsed} />
+                onClick={onItemClick} collapsed={collapsed} count={item.path === '/to-sort' ? toSortCount : undefined} />
             ))}
           </div>
 

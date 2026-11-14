@@ -58,6 +58,7 @@ import binShoppingListRoutes, {
   locationShoppingListRouter as locationShoppingListRoutes,
   shoppingListRouter as shoppingListRoutes,
 } from './routes/shoppingList.js';
+import { locationStagedRouter, stagedPurchasesRouter } from './routes/stagedPurchases.js';
 import tagColorsRoutes from './routes/tagColors.js';
 import tagsRoutes from './routes/tags/index.js';
 import userPreferencesRoutes from './routes/userPreferences.js';
@@ -219,6 +220,7 @@ export function createApp(opts?: { mountEeRoutes?: (app: express.Express) => voi
   app.use('/api/locations', customFieldsRoutes);
   app.use('/api/locations', locationCheckoutsRoutes);
   app.use('/api/locations', locationShoppingListRoutes);
+  app.use('/api/locations', locationStagedRouter);
   app.use('/api/bins', binPinsRoutes);
   app.use('/api/bins', binSharesRoutes);
   app.use('/api/bins', binsRoutes);
@@ -236,6 +238,7 @@ export function createApp(opts?: { mountEeRoutes?: (app: express.Express) => voi
   app.use('/api/saved-views', savedViewsRoutes);
   app.use('/api/scan-history', scanHistoryRoutes);
   app.use('/api/shopping-list', shoppingListRoutes);
+  app.use('/api/staged-purchases', stagedPurchasesRouter);
   app.use('/api/plan', planRoutes);
   app.use('/api/shared', sharedRoutes);
   opts?.mountEeRoutes?.(app);

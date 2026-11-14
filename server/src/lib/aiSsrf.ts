@@ -15,7 +15,7 @@ const ALLOWED_AI_HOSTS = new Set([
 ]);
 
 /** Check if an IP address is in a private/reserved range (SSRF protection). */
-function isPrivateIp(ip: string): boolean {
+export function isPrivateIp(ip: string): boolean {
   const parts = ip.split('.').map(Number);
   if (parts.length === 4 && parts.every((p) => p >= 0 && p <= 255)) {
     if (parts[0] === 10) return true;
