@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS bin_items (
 );
 CREATE INDEX IF NOT EXISTS idx_bin_items_bin_id ON bin_items(bin_id, position);
 CREATE INDEX IF NOT EXISTS idx_bin_items_deleted_at ON bin_items(deleted_at);
-CREATE INDEX IF NOT EXISTS idx_bin_items_barcode ON bin_items(barcode);
+-- idx_bin_items_barcode is created by migration 0015 only: this file runs before migrations,
+-- and on databases from before 0015 bin_items has no barcode column yet.
 
 -- Product lookups by barcode (UPC/EAN), cached so repeat scans don't hit the lookup service
 CREATE TABLE IF NOT EXISTS barcode_lookups (
