@@ -6788,29 +6788,6 @@ paths:
                 type: object
                 properties:
                   purchase: { $ref: '#/components/schemas/StagedPurchase' }
-  /locations/{locationId}/staged-purchases/receipt:
-    post:
-      tags: [StagedPurchases]
-      summary: Add the items from an order email (any store)
-      description: The AI (quickText task) extracts line items. Items are keyed by order number + title, so a store's confirmation, shipped and delivered emails update one entry.
-      parameters:
-        - { name: locationId, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [message_id, text]
-              properties:
-                message_id: { type: string }
-                from: { type: string }
-                subject: { type: string }
-                text: { type: string, description: Email body as text (truncated to 30000 chars) }
-                received_at: { type: string }
-      responses:
-        '200': { description: Not a purchase, or nothing new }
-        '201': { description: Items created }
   /staged-purchases/{id}/sort:
     post:
       tags: [StagedPurchases]

@@ -6,7 +6,6 @@
  *   GET  /:locationId/staged-purchases/count                          { pending, awaiting_delivery }
  *   POST /:locationId/staged-purchases                                ingest from any store (idempotent per source+external_id)
  *   POST /:locationId/staged-purchases/photo                          in-store purchase: photo → AI names it (or pass `name`)
- *   POST /:locationId/staged-purchases/receipt                        order email from any store → AI extracts line items
  *
  * Entry-level (mounted at /api/staged-purchases):
  *   POST /:id/sort { binId, name?, quantity? }   put it in a bin (creates a normal bin item)
@@ -26,11 +25,10 @@ import { asyncHandler } from '../lib/asyncHandler.js';
 import { isLocationAdmin, requireMemberOrAbove, verifyBinAccess, verifyLocationMembership } from '../lib/binAccess.js';
 import { config, isDemoUser } from '../lib/config.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../lib/httpErrors.js';
-import { normalizeForCompare } from '../lib/inventoryMatch.js';
 import { createLogger } from '../lib/logger.js';
 import { aiRateLimiters } from '../lib/rateLimiters.js';
 import { logRouteActivity } from '../lib/routeHelpers.js';
-import { extractReceiptItems, identifyPurchasePhoto, MAX_RECEIPT_CHARS, type ReceiptExtraction } from '../lib/stagedPurchaseAi.js';
+import { identifyPurchasePhoto } from '../lib/stagedPurchaseAi.js';
 import { fetchProductImage, PRODUCT_IMAGE_EXT, ProductImageError } from '../lib/stagedPurchaseImages.js';
 import {
   type BinSuggestion,
@@ -489,67 +487,6 @@ locationStagedRouter.post(
       await storage.delete(photoKey);
       throw err;
     }
-  }),
-);
-
-// Order email from any store → line items (used by the Gmail feeder; Amazon has its own feeder).
-locationStagedRouter.post(
-  '/:locationId/staged-purchases/receipt',
-  requireLocationMember('locationId'),
-  ...aiRateLimiters,
-  requireAiAccess(),
-  checkAiCredits(),
-  aiRouteHandler('extract receipt', async (req, res) => {
-    const { locationId } = req.params;
-    const userId = req.user!.id;
-    await requireMemberOrAbove(locationId, userId, 'add purchases');
-    const b = req.body ?? {};
-    const messageId: string = typeof b.message_id === 'string' ? b.message_id.trim() : '';
-    if (!messageId || messageId.length > 300) throw new ValidationError('message_id is required');
-    const text = typeof b.text === 'string' ? b.text : '';
-    if (!text.trim()) throw new ValidationError('text is required');
-    const from = typeof b.from === 'string' ? b.from.slice(0, 300) : '';
-    const subject = typeof b.subject === 'string' ? b.subject.slice(0, 500) : '';
-
-    const extraction: ReceiptExtraction = config.aiMock
-      ? { is_purchase: true, store: 'Mock Store', order_ref: null, status: 'ordered', items: [{ name: subject || 'Mock Item', title: subject || 'Mock Item', quantity: 1, price: null, product_url: null }] }
-      : await extractReceiptItems(userId, { from, subject, text: text.slice(0, MAX_RECEIPT_CHARS) }, isDemoUser(req));
-
-    if (!extraction.is_purchase || extraction.items.length === 0) {
-      res.json({ is_purchase: extraction.is_purchase, store: extraction.store, created: 0, updated: 0, unchanged: 0, auto_skipped: 0, ids: [] });
-      return;
-    }
-
-    // A store usually sends several emails per order (confirmation, shipped, delivered). Key items by
-    // order number + title so those emails update one entry instead of adding duplicates.
-    const orderRef = (extraction.order_ref ?? '').trim().slice(0, 100);
-    const delivered = ['delivered', 'picked_up', 'in_store'].includes(extraction.status);
-
-    const storeName = extraction.store.trim().slice(0, 100) || 'Online';
-    const source = storeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'email';
-    const inputs: StagedPurchaseInput[] = [];
-    extraction.items.forEach((item, i) => {
-      const title = (item.title || item.name).trim();
-      let productUrl: string | undefined;
-      try {
-        productUrl = item.product_url && /^https?:\/\//.test(item.product_url) ? new URL(item.product_url).toString() : undefined;
-      } catch { productUrl = undefined; }
-      inputs.push(parseStagedInput({
-        source,
-        store: storeName,
-        external_id: `${orderRef || messageId}#${normalizeForCompare(title).slice(0, 80)}`.slice(0, 200),
-        order_ref: orderRef || undefined,
-        delivered,
-        title: title.slice(0, 500),
-        name: (item.name || '').trim().slice(0, MAX_NAME_LEN) || undefined,
-        quantity: typeof item.quantity === 'number' && item.quantity >= 1 ? item.quantity : undefined,
-        price: typeof item.price === 'number' && item.price >= 0 ? item.price : undefined,
-        purchased_at: typeof b.received_at === 'string' ? b.received_at : undefined,
-        product_url: productUrl,
-      }, i));
-    });
-    const stats = await ingestPurchases(locationId, userId, inputs);
-    res.status(stats.created > 0 ? 201 : 200).json({ is_purchase: true, store: storeName, status: extraction.status, ...stats });
   }),
 );
 

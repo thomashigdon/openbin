@@ -7,16 +7,6 @@ vi.mock('../lib/stagedPurchaseAi.js', async (importOriginal) => {
   return {
     ...orig,
     identifyPurchasePhoto: vi.fn(async () => ({ name: 'Gorilla Wood Glue 8 oz', quantity: 1, description: 'Yellow bottle' })),
-    extractReceiptItems: vi.fn(async () => ({
-      is_purchase: true,
-      store: 'Home Depot',
-      order_ref: 'WD12345',
-      status: 'ordered',
-      items: [
-        { name: 'Simpson Strong-Tie Joist Hanger', title: 'Simpson Strong-Tie LUS26 2x6 Joist Hanger (10-Pack)', quantity: 10, price: 1.98, product_url: 'https://www.homedepot.com/p/123' },
-        { name: 'Wood Screws 3 in', title: 'GRK Fasteners #9 x 3 in. Wood Screws', quantity: 1, price: 34.97, product_url: null },
-      ],
-    })),
   };
 });
 
@@ -319,40 +309,5 @@ describe('store product photos', () => {
     const other = await createTestUser(app);
     const res = await request(app).get(`/api/staged-purchases/${p.id}/photo`).set('Authorization', `Bearer ${other.token}`);
     expect(res.status).toBe(404);
-  });
-});
-
-describe('order emails from other stores', () => {
-  const body = { message_id: '<abc123@homedepot.com>', from: 'Home Depot <orders@homedepot.com>', subject: 'Your order WD12345', text: 'Thanks for your order...' };
-
-  it('extracts line items', async () => {
-    const res = await request(app).post(`/api/locations/${locationId}/staged-purchases/receipt`).set(auth()).send(body);
-    expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ is_purchase: true, store: 'Home Depot', created: 2 });
-
-    const list = await pending();
-    expect(list.map((p) => p.name).sort()).toEqual(['Simpson Strong-Tie Joist Hanger', 'Wood Screws 3 in']);
-    expect(list.every((p) => p.source === 'home-depot' && p.order_ref === 'WD12345' && p.delivered === false)).toBe(true);
-  });
-
-  it('the shipped/delivered emails for the same order update it instead of duplicating', async () => {
-    await request(app).post(`/api/locations/${locationId}/staged-purchases/receipt`).set(auth()).send(body);
-    const extracted = await vi.mocked(ai.extractReceiptItems).mock.results[0].value;
-    vi.mocked(ai.extractReceiptItems).mockResolvedValueOnce({ ...extracted, status: 'delivered' });
-    const res = await request(app).post(`/api/locations/${locationId}/staged-purchases/receipt`).set(auth())
-      .send({ ...body, message_id: '<def456@homedepot.com>', subject: 'We delivered your order.' });
-    expect(res.body).toMatchObject({ created: 0, updated: 2 });
-    const list = await pending();
-    expect(list).toHaveLength(2);
-    expect(list.every((p) => p.delivered)).toBe(true);
-  });
-
-  it('ignores emails that are not purchases of things', async () => {
-    vi.mocked(ai.extractReceiptItems).mockResolvedValueOnce({ is_purchase: false, store: 'YouTube', order_ref: null, status: 'other', items: [] });
-    const res = await request(app).post(`/api/locations/${locationId}/staged-purchases/receipt`).set(auth())
-      .send({ ...body, message_id: '<yt@youtube.com>', subject: 'Your YouTube Premium membership has renewed' });
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ is_purchase: false, created: 0 });
-    expect(await pending()).toHaveLength(0);
   });
 });
