@@ -12,10 +12,11 @@ vi.mock('@/components/ui/toast', () => ({
   useToast: vi.fn(() => ({ showToast })),
 }));
 vi.mock('@/lib/usePermissions', () => ({
-  usePermissions: vi.fn(() => ({ canWrite: true })),
+  usePermissions: vi.fn(() => ({ canWrite: true, canCreateBin: true })),
 }));
 vi.mock('@/features/bins/useBins', () => ({
   useBinList: vi.fn(() => ({ bins: [], isLoading: false })),
+  addBin: vi.fn().mockResolvedValue({ id: 'bin-new', name: 'Plumbing Parts' }),
 }));
 vi.mock('../useStagedPurchases', () => ({
   useStagedPurchases: vi.fn(() => ({ purchases: [], isLoading: false })),
@@ -28,6 +29,8 @@ vi.mock('../useStagedPurchases', () => ({
   stagedPhotoUrl: (id: string) => `/api/staged-purchases/${id}/photo`,
 }));
 
+import { addBin, useBinList } from '@/features/bins/useBins';
+import { usePermissions } from '@/lib/usePermissions';
 import { ToBeSortedPage } from '../ToBeSortedPage';
 import { addPurchaseFromPhoto, skipPurchase, sortPurchase, useStagedPurchases } from '../useStagedPurchases';
 
@@ -68,6 +71,8 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(useBinList).mockReturnValue({ bins: [], isLoading: false } as unknown as ReturnType<typeof useBinList>);
+  vi.mocked(usePermissions).mockReturnValue({ canWrite: true, canCreateBin: true } as ReturnType<typeof usePermissions>);
   vi.mocked(useStagedPurchases).mockReturnValue({ purchases: [], isLoading: false, error: null });
 });
 
@@ -127,6 +132,36 @@ describe('ToBeSortedPage', () => {
     vi.mocked(useStagedPurchases).mockReturnValue({ purchases: [purchase({ suggestions: [] })], isLoading: false, error: null });
     renderPage();
     expect(screen.getByRole('button', { name: 'Choose a bin…' })).toBeInTheDocument();
+  });
+
+  it('creates a new bin from the picker and puts the item in it', async () => {
+    vi.mocked(useStagedPurchases).mockReturnValue({ purchases: [purchase({ suggestions: [] })], isLoading: false, error: null });
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a bin…' }));
+    fireEvent.change(screen.getByPlaceholderText('Search bins or name a new one...'), { target: { value: '  Plumbing Parts ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create bin “Plumbing Parts”' }));
+    await waitFor(() => expect(addBin).toHaveBeenCalledWith({ name: 'Plumbing Parts', locationId: 'loc-1' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Put here' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Put here' }));
+    await waitFor(() => expect(sortPurchase).toHaveBeenCalledWith('p1', 'bin-new', undefined));
+  });
+
+  it('does not offer to create a bin that already exists', () => {
+    vi.mocked(useBinList).mockReturnValue({ bins: [{ id: 'bin-k', name: 'Kitchen Tools', area_name: '' }], isLoading: false } as unknown as ReturnType<typeof useBinList>);
+    vi.mocked(useStagedPurchases).mockReturnValue({ purchases: [purchase({ suggestions: [] })], isLoading: false, error: null });
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a bin…' }));
+    fireEvent.change(screen.getByPlaceholderText('Search bins or name a new one...'), { target: { value: 'kitchen tools' } });
+    expect(screen.queryByRole('button', { name: /Create bin/ })).not.toBeInTheDocument();
+  });
+
+  it('only offers to create bins to people who can', () => {
+    vi.mocked(usePermissions).mockReturnValue({ canWrite: true, canCreateBin: false } as ReturnType<typeof usePermissions>);
+    vi.mocked(useStagedPurchases).mockReturnValue({ purchases: [purchase({ suggestions: [] })], isLoading: false, error: null });
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a bin…' }));
+    fireEvent.change(screen.getByPlaceholderText('Search bins...'), { target: { value: 'Plumbing Parts' } });
+    expect(screen.queryByRole('button', { name: /Create bin/ })).not.toBeInTheDocument();
   });
 
   it('adds an in-store purchase from a photo', async () => {

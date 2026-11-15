@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SkeletonList } from '@/components/ui/skeleton-list';
 import { useToast } from '@/components/ui/toast';
 import { Tooltip } from '@/components/ui/tooltip';
+import { addBin } from '@/features/bins/useBins';
 import { useAuth } from '@/lib/auth';
 import { BulkActionBar } from '@/lib/bulk/BulkActionBar';
 import { BulkUpdateDialog } from '@/lib/bulk/BulkUpdateDialog';
@@ -218,7 +219,7 @@ function PurchaseCard({ purchase, selected, busy, canWrite, onToggle, onSort, on
 
 export function ToBeSortedPage() {
   const { activeLocationId } = useAuth();
-  const { canWrite } = usePermissions();
+  const { canWrite, canCreateBin } = usePermissions();
   const { showToast } = useToast();
   const locationId = activeLocationId ?? null;
   const [tab, setTab] = useState<StagedStatus>('pending');
@@ -314,6 +315,18 @@ export function ToBeSortedPage() {
       clearSelection(ids);
     } catch (err) {
       showToast({ message: errorMessage(err, 'Could not put that in the bin'), variant: 'error' });
+    }
+  }
+
+  async function handleCreateBin(name: string): Promise<string> {
+    if (!locationId) throw new Error('No location');
+    try {
+      // No success toast: the new bin shows up selected, and a toast would cover "Put here" on phones.
+      const bin = await addBin({ name, locationId });
+      return bin.id;
+    } catch (err) {
+      showToast({ message: errorMessage(err, 'Could not create that bin'), variant: 'error' });
+      throw err;
     }
   }
 
@@ -470,6 +483,7 @@ export function ToBeSortedPage() {
           onSearchChange={setPickerSearch}
           paused={picker === null}
           emptyText="No bins yet"
+          onCreate={canCreateBin ? handleCreateBin : undefined}
         />
       </BulkUpdateDialog>
     </div>

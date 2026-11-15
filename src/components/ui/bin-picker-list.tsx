@@ -1,5 +1,5 @@
-import { Check } from 'lucide-react';
-import { useMemo } from 'react';
+import { Check, Loader2, Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useBinList } from '@/features/bins/useBins';
 import { resolveColor } from '@/lib/colorPalette';
 import { resolveIcon } from '@/lib/iconMap';
@@ -16,6 +16,11 @@ export interface BinPickerListProps {
   /** When true, the bin list is fetched lazily (not until visible). */
   paused?: boolean;
   emptyText?: string;
+  /**
+   * When set, the search text doubles as a name for a new bin: a "Create bin" row appears when no bin
+   * has that exact name. Resolves to the new bin's id, which is then selected; rejects to leave things as they were.
+   */
+  onCreate?: (name: string) => Promise<string>;
 }
 
 export function BinPickerList({
@@ -26,8 +31,10 @@ export function BinPickerList({
   onSearchChange,
   paused,
   emptyText = 'No other bins available',
+  onCreate,
 }: BinPickerListProps) {
   const { bins } = useBinList(undefined, 'name', undefined, paused);
+  const [creating, setCreating] = useState(false);
 
   const filtered = useMemo(() => {
     let list = excludeBinId ? bins.filter((b) => b.id !== excludeBinId) : bins;
@@ -40,13 +47,28 @@ export function BinPickerList({
     return list;
   }, [bins, excludeBinId, search]);
 
+  const newName = search.trim();
+  const canCreate = !!onCreate && newName !== '' && !bins.some((b) => b.name.trim().toLowerCase() === newName.toLowerCase());
+
+  async function handleCreate() {
+    if (!onCreate || creating) return;
+    setCreating(true);
+    try {
+      onSelect(await onCreate(newName));
+    } catch {
+      // The caller reports the error.
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <SearchInput
         value={search}
         onChange={(e) => onSearchChange(e.target.value)}
         onClear={search ? () => onSearchChange('') : undefined}
-        placeholder="Search bins..."
+        placeholder={onCreate ? 'Search bins or name a new one...' : 'Search bins...'}
       />
       <div className="max-h-52 overflow-y-auto flex flex-col gap-1">
         {filtered.length === 0 ? (
@@ -85,6 +107,22 @@ export function BinPickerList({
           })
         )}
       </div>
+      {canCreate && (
+        <button
+          type="button"
+          onClick={() => void handleCreate()}
+          disabled={creating}
+          className={cn(
+            'w-full text-left px-3 py-2.5 rounded-[var(--radius-sm)] transition-colors duration-150 flex items-center gap-2 border border-dashed border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] disabled:opacity-60',
+            focusRing,
+          )}
+        >
+          {creating
+            ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--accent)]" />
+            : <Plus className="h-4 w-4 shrink-0 text-[var(--accent)]" />}
+          <span className="text-[14px] truncate text-[var(--text-primary)]">Create bin “{newName}”</span>
+        </button>
+      )}
     </div>
   );
 }
