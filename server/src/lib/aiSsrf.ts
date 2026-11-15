@@ -1,6 +1,6 @@
 import dns from 'node:dns';
 import { promisify } from 'node:util';
-import { Agent } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { AiAnalysisError } from './aiErrors.js';
 import { config as appConfig } from './config.js';
 
@@ -92,18 +92,22 @@ export function createPinnedFetch(resolvedIps: string[]): typeof globalThis.fetc
   const family = ip.includes(':') ? 6 : 4;
   const agent = new Agent({
     connect: {
+      // Node asks for every address (options.all) when it races IPv4/IPv6; answer in that shape too.
       lookup: (
         _hostname: string,
-        _options: unknown,
-        cb: (err: Error | null, address: string, family: number) => void,
+        options: { all?: boolean } | undefined,
+        cb: (err: Error | null, address: string | Array<{ address: string; family: number }>, family?: number) => void,
       ) => {
-        cb(null, ip, family);
+        if (options?.all) cb(null, [{ address: ip, family }]);
+        else cb(null, ip, family);
       },
     },
   });
+  // Use undici's own fetch: Node's built-in fetch bundles an older undici whose dispatcher
+  // interface rejects this Agent ("invalid onRequestStart method").
   return ((input: unknown, init?: unknown) =>
-    globalThis.fetch(input as Request, { ...(init as RequestInit), dispatcher: agent } as RequestInit)
-  ) as typeof globalThis.fetch;
+    undiciFetch(input as Parameters<typeof undiciFetch>[0], { ...(init as object), dispatcher: agent } as Parameters<typeof undiciFetch>[1])
+  ) as unknown as typeof globalThis.fetch;
 }
 
 /** Validate `endpointUrl` and return a DNS-pinned fetch when pinning is required, otherwise undefined. */
