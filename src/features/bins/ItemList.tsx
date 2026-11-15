@@ -6,8 +6,10 @@ import { useToast } from '@/components/ui/toast';
 import { checkoutItem, returnItem } from '@/features/checkouts/useCheckouts';
 import { addItemsToShoppingList, removeFromShoppingList } from '@/features/shopping-list/useShoppingList';
 import { Events, notify } from '@/lib/eventBus';
+import { itemDetailSummary } from '@/lib/itemValue';
 import { cn } from '@/lib/utils';
 import type { BinItem, ItemCheckout } from '@/types';
+import { ItemDetailsDialog } from './ItemDetailsDialog';
 import { ItemListCheckoutRow } from './ItemListCheckoutRow';
 import { ItemListPagination } from './ItemListPagination';
 import { ItemListReadOnlyRow } from './ItemListReadOnlyRow';
@@ -74,6 +76,10 @@ export function ItemList({ items, binId, readOnly, hideWhenEmpty, hideHeader, ch
   const effectiveItems = viewMode ? localItems : items;
 
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Price & barcode editing needs a saved item, so only in view mode.
+  const [detailsItemId, setDetailsItemId] = useState<string | null>(null);
+  const detailsItem = detailsItemId ? effectiveItems.find((i) => i.id === detailsItemId) ?? null : null;
 
   const displayItems = useMemo(
     () => effectiveItems.filter((item) => !pendingDeleteIds.has(item.id)),
@@ -385,6 +391,8 @@ export function ItemList({ items, binId, readOnly, hideWhenEmpty, hideHeader, ch
                         text={item.name}
                         quantity={item.quantity}
                         saved={savedIds.has(item.id)}
+                        detail={itemDetailSummary(item)}
+                        onDetails={viewMode ? () => setDetailsItemId(item.id) : undefined}
                         onCheckout={binId ? () => handleCheckout(item.id) : undefined}
                         onSave={(value, qty) => handleSaveEdit(item.id, value, qty)}
                         onDelete={() => handleDelete(item.id)}
@@ -417,6 +425,16 @@ export function ItemList({ items, binId, readOnly, hideWhenEmpty, hideHeader, ch
             itemLabel={displayItems.length === 1 ? 'item' : 'items'}
           />
         </div>
+      )}
+
+      {binId && detailsItem && (
+        <ItemDetailsDialog
+          open
+          onOpenChange={(o) => { if (!o) setDetailsItemId(null); }}
+          binId={binId}
+          item={detailsItem}
+          onSaved={(saved) => setLocalItems((prev) => prev.map((i) => (i.id === saved.id ? { ...i, ...saved } : i)))}
+        />
       )}
     </div>
   );

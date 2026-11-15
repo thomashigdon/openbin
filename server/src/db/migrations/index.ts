@@ -12,6 +12,7 @@ import { clearLegacyMonthlyBillingPeriod } from './0011_clear_legacy_monthly_bil
 import { resetAiCreditPeriods } from './0012_reset_ai_credit_periods.js';
 import { userConsent } from './0013_user_consent.js';
 import { stagedPurchases } from './0014_staged_purchases.js';
+import { itemPurchaseDetails } from './0015_item_purchase_details.js';
 import type { Migration } from './types.js';
 
 /**
@@ -33,4 +34,5 @@ export const migrations: Migration[] = [
   resetAiCreditPeriods,
   userConsent,
   stagedPurchases,
+  itemPurchaseDetails,
 ];

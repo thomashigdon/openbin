@@ -219,6 +219,10 @@ export const config = Object.freeze({
   // Non-image file attachments on bins (on by default; set ATTACHMENTS_ENABLED=false to disable)
   attachmentsEnabled: parseBool(process.env.ATTACHMENTS_ENABLED, true),
 
+  // Product names for scanned barcodes come from public lookup services (UPCitemdb, Open Food Facts).
+  // Set BARCODE_LOOKUP_ENABLED=false to keep scans local (barcodes still match items you've tagged).
+  barcodeLookupEnabled: parseBool(process.env.BARCODE_LOOKUP_ENABLED, true),
+
   // When true, the optional marketing-email checkbox renders on signup +
   // /auth/complete-signup, and `marketingOptIn` body fields are honored on
   // /api/auth/register and /api/auth/complete-consent. When false (default),

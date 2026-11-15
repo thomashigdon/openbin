@@ -6,6 +6,7 @@ import { VALID_ROLES } from './adminHelpers.js';
 import { BIN_SELECT_COLS } from './binQueries.js';
 import { config } from './config.js';
 import { replaceCustomFieldValues } from './customFieldHelpers.js';
+import { type ItemDetailsInput, parseItemDetails } from './itemDetails.js';
 import { createLogger } from './logger.js';
 import { isPathSafe, safePath } from './pathSafety.js';
 import { generateShortCode } from './shortCode.js';
@@ -22,11 +23,20 @@ export const MAX_EXPORT_BINS = 5000;
 export const MAX_EXPORT_PHOTOS_PER_BIN = 50;
 export const MAX_EXPORT_TOTAL_PHOTOS = 1000;
 
+export interface ExportItem {
+  name: string;
+  quantity?: number | null;
+  unitPrice?: number;
+  purchasedAt?: string;
+  purchasedFrom?: string;
+  barcode?: string;
+}
+
 export interface ExportBin {
   id: string;
   name: string;
   location: string;
-  items: Array<string | { name: string; quantity?: number | null }>;
+  items: Array<string | ExportItem>;
   notes: string;
   tags: string[];
   icon: string;
@@ -130,6 +140,41 @@ export function extractItemsWithQuantity(items: unknown): Array<string | { name:
     if (i.quantity != null && i.quantity >= 1) return { name: i.name, quantity: i.quantity };
     return i.name;
   });
+}
+
+/**
+ * Items for the JSON export: a bare name when that's all there is, otherwise an object
+ * carrying quantity and any purchase details / barcode.
+ */
+export function extractItemsForExport(items: unknown): Array<string | ExportItem> {
+  if (!Array.isArray(items)) return [];
+  return items.map((i: string | Record<string, unknown>) => {
+    if (typeof i === 'string') return i;
+    const out: ExportItem = { name: i.name as string };
+    if (typeof i.quantity === 'number' && i.quantity >= 1) out.quantity = i.quantity;
+    if (typeof i.unit_price === 'number') out.unitPrice = i.unit_price;
+    if (typeof i.purchased_at === 'string' && i.purchased_at) out.purchasedAt = i.purchased_at;
+    if (typeof i.purchased_from === 'string' && i.purchased_from) out.purchasedFrom = i.purchased_from;
+    if (typeof i.barcode === 'string' && i.barcode) out.barcode = i.barcode;
+    return Object.keys(out).length === 1 ? out.name : out;
+  });
+}
+
+/** Purchase details from an imported item; malformed values are dropped rather than failing the import. */
+function importedItemDetails(item: ExportItem): ItemDetailsInput {
+  const pick = (raw: Record<string, unknown>) => {
+    try {
+      return parseItemDetails(raw);
+    } catch {
+      return {};
+    }
+  };
+  return {
+    ...pick({ unit_price: item.unitPrice }),
+    ...pick({ purchased_at: item.purchasedAt }),
+    ...pick({ purchased_from: item.purchasedFrom }),
+    ...pick({ barcode: item.barcode }),
+  };
 }
 
 /** Load photo metadata for a bin (no file data). */
@@ -283,15 +328,17 @@ export async function insertBinWithShortCode(
 }
 
 /** Insert items into bin_items. */
-export async function insertBinItems(binId: string, items: Array<string | { name: string; quantity?: number | null }>, tx?: TxQueryFn): Promise<void> {
+export async function insertBinItems(binId: string, items: Array<string | ExportItem>, tx?: TxQueryFn): Promise<void> {
   const q = tx ?? query;
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const name = typeof item === 'string' ? item : item.name;
     const qty = typeof item === 'object' && item.quantity != null ? item.quantity : null;
+    const det = typeof item === 'object' ? importedItemDetails(item) : {};
     await q(
-      'INSERT INTO bin_items (id, bin_id, name, quantity, position) VALUES ($1, $2, $3, $4, $5)',
-      [generateUuid(), binId, name, qty, i]
+      `INSERT INTO bin_items (id, bin_id, name, quantity, position, unit_price, purchased_at, purchased_from, barcode)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [generateUuid(), binId, name, qty, i, det.unit_price ?? null, det.purchased_at ?? null, det.purchased_from ?? null, det.barcode ?? null]
     );
   }
 }
@@ -693,7 +740,7 @@ export function buildExportBinEntry(
     id: bin.id as string,
     name: bin.name as string,
     location: areaPath,
-    items: extractItemsWithQuantity(bin.items),
+    items: extractItemsForExport(bin.items),
     notes: bin.notes as string,
     tags: bin.tags as string[],
     icon: bin.icon as string,

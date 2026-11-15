@@ -1,4 +1,4 @@
-import { AlertCircle, Lock, Plus, RotateCcw, ScanLine, Search, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowRight, Lock, PackageSearch, Plus, RotateCcw, ScanLine, Search, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -6,14 +6,18 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { BarcodeProductImage } from '@/features/bins/BarcodeProductImage';
 import { BinCreateDialog } from '@/features/bins/BinCreateDialog';
-import { lookupBinByCodeSafe } from '@/features/bins/useBins';
+import { lookupBarcode, lookupBinByCodeSafe } from '@/features/bins/useBins';
 import { recordScan } from '@/features/dashboard/scanHistory';
 import { recordBinUsage } from '@/features/usage/recordBinUsage';
 import { ApiError, apiFetch } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { BIN_URL_REGEX } from '@/lib/qr';
 import { useTerminology } from '@/lib/terminology';
 import { haptic } from '@/lib/utils';
+import type { BarcodeLookupResult } from '@/types';
+import { normalizeBarcode } from './BarcodeScanDialog';
 import { Html5QrcodePlugin } from './Html5QrcodePlugin';
 
 interface ScanDialogProps {
@@ -24,7 +28,10 @@ interface ScanDialogProps {
 export function ScanDialog({ open, onOpenChange }: ScanDialogProps) {
   const t = useTerminology();
   const navigate = useNavigate();
+  const { activeLocationId } = useAuth();
   const [error, setError] = useState<string>('');
+  // A product barcode was scanned: where that item lives (or what the product is, if nowhere).
+  const [barcodeResult, setBarcodeResult] = useState<BarcodeLookupResult | null>(null);
   const [scanning, setScanning] = useState(true);
   const [unknownId, setUnknownId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -43,6 +50,7 @@ export function ScanDialog({ open, onOpenChange }: ScanDialogProps) {
       setManualLoading(false);
       setScanning(true);
       setScanErrorType(null);
+      setBarcodeResult(null);
     }
   }, [open]);
 
@@ -100,15 +108,34 @@ export function ScanDialog({ open, onOpenChange }: ScanDialogProps) {
             setUnknownId(binId);
           }
         }
+      } else if (normalizeBarcode(decodedText) && activeLocationId) {
+        const code = normalizeBarcode(decodedText) as string;
+        haptic();
+        setScanning(false);
+        try {
+          const result = await lookupBarcode(code, activeLocationId);
+          if (result.matches.length === 1) {
+            const binId = result.matches[0].bin_id;
+            recordScan(binId);
+            recordBinUsage(binId, 'scan');
+            onOpenChange(false);
+            navigate(`/bin/${binId}`);
+            return;
+          }
+          setBarcodeResult(result);
+        } catch {
+          setBarcodeResult({ code, product: null, matches: [] });
+        }
       } else {
         setScanning(false);
         setError(decodedText);
       }
     },
-    [navigate, onOpenChange],
+    [navigate, onOpenChange, activeLocationId],
   );
 
   function handleRetry() {
+    setBarcodeResult(null);
     setError('');
     setUnknownId(null);
     setScanErrorType(null);
@@ -120,7 +147,7 @@ export function ScanDialog({ open, onOpenChange }: ScanDialogProps) {
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Scan QR Code</DialogTitle>
+            <DialogTitle>Scan</DialogTitle>
           </DialogHeader>
 
           {error ? (
@@ -187,6 +214,59 @@ export function ScanDialog({ open, onOpenChange }: ScanDialogProps) {
                 </div>
               </CardContent>
             </Card>
+          ) : barcodeResult ? (
+            <Card>
+              <CardContent className="py-8">
+                <div className="flex flex-col items-center gap-5 text-center">
+                  <div className="h-14 w-14 rounded-[var(--radius-xl)] bg-[var(--accent)] bg-opacity-10 flex items-center justify-center">
+                    <PackageSearch className="h-7 w-7 text-[var(--accent)]" />
+                  </div>
+                  {barcodeResult.matches.length > 0 ? (
+                    <div className="w-full space-y-3">
+                      <p className="text-[17px] font-semibold text-[var(--text-primary)]">
+                        In {barcodeResult.matches.length} {t.bins}
+                      </p>
+                      <div className="space-y-1.5">
+                        {barcodeResult.matches.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              recordScan(m.bin_id);
+                              recordBinUsage(m.bin_id, 'scan');
+                              onOpenChange(false);
+                              navigate(`/bin/${m.bin_id}`);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--bg-hover)] px-3 py-2.5 text-left text-[14px] hover:bg-[var(--bg-active)]"
+                          >
+                            <span className="flex-1 min-w-0 truncate text-[var(--text-primary)]">{m.bin_name}</span>
+                            <span className="shrink-0 truncate text-[13px] text-[var(--text-tertiary)]">{m.name}{m.quantity ? ` ×${m.quantity}` : ''}</span>
+                            <ArrowRight className="h-4 w-4 shrink-0 text-[var(--text-tertiary)]" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {barcodeResult.product?.image_url && (
+                        <BarcodeProductImage code={barcodeResult.code} className="mx-auto mb-3 h-28 w-28" />
+                      )}
+                      <p className="text-[17px] font-semibold text-[var(--text-primary)]">Not in any {t.bin}</p>
+                      <p className="text-[13px] text-[var(--text-tertiary)] leading-relaxed max-w-xs mx-auto">
+                        {barcodeResult.product
+                          ? `${barcodeResult.product.name} isn’t in your inventory yet.`
+                          : `Nothing in your inventory has barcode ${barcodeResult.code}.`}
+                        {' '}Add it from a {t.bin} with the barcode button.
+                      </p>
+                    </div>
+                  )}
+                  <Button variant="outline" onClick={handleRetry} className="mt-1">
+                    <RotateCcw className="h-4 w-4 mr-1.5" />
+                    Scan Again
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : unknownId ? (
             <Card>
               <CardContent className="py-8">
@@ -216,10 +296,10 @@ export function ScanDialog({ open, onOpenChange }: ScanDialogProps) {
           ) : (
             <Card className="overflow-hidden">
               <CardContent className="py-5">
-                {open && <Html5QrcodePlugin paused={!scanning} onScanSuccess={handleScan} />}
+                {open && <Html5QrcodePlugin formats="any" paused={!scanning} onScanSuccess={handleScan} />}
                 {scanning && (
                   <p className="mt-5 text-center text-[13px] text-[var(--text-tertiary)]">
-                    Point your camera at a {t.bin} QR code
+                    Point your camera at a {t.bin} QR code or an item’s barcode
                   </p>
                 )}
                 {!scanning && (

@@ -614,6 +614,42 @@ components:
           type: integer
           nullable: true
           description: Optional quantity (null = not tracked)
+        unit_price:
+          type: number
+          nullable: true
+          description: Price paid per unit
+        purchased_at:
+          type: string
+          nullable: true
+          description: Purchase date (YYYY-MM-DD) or ISO timestamp from an imported order
+        purchased_from:
+          type: string
+          nullable: true
+          description: Store or seller
+        barcode:
+          type: string
+          nullable: true
+          description: UPC/EAN digits (8–14)
+
+    ItemDetails:
+      type: object
+      description: Purchase details and barcode. Omitted fields are left unchanged; null clears a field.
+      properties:
+        unit_price:
+          type: number
+          nullable: true
+          minimum: 0
+        purchased_at:
+          type: string
+          nullable: true
+        purchased_from:
+          type: string
+          nullable: true
+          maxLength: 100
+        barcode:
+          type: string
+          nullable: true
+          pattern: '^[0-9]{8,14}$'
 
     BinVisibility:
       type: string
@@ -3669,13 +3705,15 @@ paths:
                   items:
                     oneOf:
                       - type: string
-                      - type: object
-                        properties:
-                          name:
-                            type: string
-                          quantity:
-                            type: integer
-                        required: [name]
+                      - allOf:
+                          - type: object
+                            properties:
+                              name:
+                                type: string
+                              quantity:
+                                type: integer
+                            required: [name]
+                          - $ref: '#/components/schemas/ItemDetails'
       responses:
         '201':
           description: Items added
@@ -3808,6 +3846,119 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /bins/{id}/items/{itemId}/details:
+    patch:
+      tags: [Bins]
+      summary: Set an item's purchase details and barcode
+      description: Only the fields given change. At least one field is required.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemDetails'
+      responses:
+        '200':
+          description: The updated item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BinItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /barcodes/{code}:
+    get:
+      tags: [Items]
+      summary: Look up a barcode
+      description: >
+        Items in the location tagged with this UPC/EAN code, and the product it names.
+        The product comes from a cache or public databases (UPCitemdb, then Open Food Facts),
+        and is skipped when items already match unless lookup=true. Disable outside lookups
+        with BARCODE_LOOKUP_ENABLED=false.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]{8,14}$'
+        - name: location_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: lookup
+          in: query
+          schema:
+            type: boolean
+          description: Look up the product even when items already match
+      responses:
+        '200':
+          description: Matches and product
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  product:
+                    type: object
+                    nullable: true
+                    properties:
+                      name:
+                        type: string
+                      brand:
+                        type: string
+                        nullable: true
+                      image_url:
+                        type: string
+                        nullable: true
+                      source:
+                        type: string
+                  matches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        quantity:
+                          type: integer
+                          nullable: true
+                        bin_id:
+                          type: string
+                        bin_name:
+                          type: string
+                        bin_icon:
+                          type: string
+                        bin_color:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationError'
 

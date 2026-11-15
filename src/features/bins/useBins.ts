@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth';
 import { Events, notify, useRefreshOn } from '@/lib/eventBus';
 import { useListData } from '@/lib/useListData';
 import { usePagedList } from '@/lib/usePagedList';
-import type { Bin, BinItem, BinVisibility } from '@/types';
+import type { BarcodeLookupResult, Bin, BinItem, BinVisibility, ItemDetails } from '@/types';
 
 /** Build a word-boundary regex from a raw search query */
 export function buildSearchRegex(query: string): RegExp {
@@ -306,7 +306,7 @@ export async function updateBin(
   notifyBinsChanged();
 }
 
-export async function addItemsToBin(binId: string, items: (string | { name: string; quantity?: number | null })[]): Promise<BinItem[]> {
+export async function addItemsToBin(binId: string, items: (string | ({ name: string; quantity?: number | null } & ItemDetails))[]): Promise<BinItem[]> {
   const result = await apiFetch<{ items: BinItem[] }>(`/api/bins/${binId}/items`, {
     method: 'POST',
     body: { items },
@@ -328,6 +328,22 @@ export async function renameItem(binId: string, itemId: string, name: string, qu
     body,
   });
   if (!options?.quiet) notifyBinsChanged();
+}
+
+export async function updateItemDetails(binId: string, itemId: string, details: ItemDetails): Promise<BinItem> {
+  const result = await apiFetch<BinItem>(`/api/bins/${binId}/items/${itemId}/details`, {
+    method: 'PATCH',
+    body: details,
+  });
+  notifyBinsChanged();
+  return result;
+}
+
+/** Items in the location carrying this barcode, and (when none do, or `lookup` is set) the product it names. */
+export async function lookupBarcode(code: string, locationId: string, options?: { lookup?: boolean }): Promise<BarcodeLookupResult> {
+  const qs = new URLSearchParams({ location_id: locationId });
+  if (options?.lookup) qs.set('lookup', 'true');
+  return apiFetch<BarcodeLookupResult>(`/api/barcodes/${encodeURIComponent(code)}?${qs}`);
 }
 
 export async function updateItemQuantity(binId: string, itemId: string, quantity: number): Promise<{ id: string; quantity?: number; removed?: boolean }> {

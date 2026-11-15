@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { useDictation } from '@/lib/useDictation';
 import type { Bin, CustomField, ItemCheckout } from '@/types';
+import { BarcodeAddDialog } from './BarcodeAddDialog';
 import { CustomFieldsEditCard } from './CustomFieldsEditCard';
 import { CustomFieldsViewCard } from './CustomFieldsViewCard';
 import { ItemList } from './ItemList';
@@ -37,6 +38,7 @@ export function BinDetailContentsTab({
   customFields,
   checkouts,
 }: BinDetailContentsTabProps) {
+  const [barcodeOpen, setBarcodeOpen] = useState(false);
   const [localCustomFields, setLocalCustomFields] = useState(bin.custom_fields || {});
   const prevCustomFields = useRef(bin.custom_fields);
 
@@ -68,6 +70,7 @@ export function BinDetailContentsTab({
               canTranscribe={canTranscribe}
               variant="inline"
               isEmptyList={bin.items.length === 0}
+              onScanBarcode={() => setBarcodeOpen(true)}
             />
           ) : undefined
         }
@@ -88,6 +91,10 @@ export function BinDetailContentsTab({
             <CustomFieldsViewCard fields={customFields} values={bin.custom_fields} />
           )}
         </div>
+      )}
+
+      {canEdit && (
+        <BarcodeAddDialog open={barcodeOpen} onOpenChange={setBarcodeOpen} binId={bin.id} locationId={bin.location_id} />
       )}
     </div>
   );

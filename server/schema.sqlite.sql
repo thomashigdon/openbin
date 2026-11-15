@@ -94,11 +94,27 @@ CREATE TABLE IF NOT EXISTS bin_items (
   quantity   INTEGER DEFAULT NULL,
   position   INTEGER NOT NULL DEFAULT 0,
   deleted_at TEXT,
+  unit_price REAL,
+  purchased_at TEXT,
+  purchased_from TEXT,
+  barcode    TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_bin_items_bin_id ON bin_items(bin_id, position);
 CREATE INDEX IF NOT EXISTS idx_bin_items_deleted_at ON bin_items(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_bin_items_barcode ON bin_items(barcode);
+
+-- Product lookups by barcode (UPC/EAN), cached so repeat scans don't hit the lookup service
+CREATE TABLE IF NOT EXISTS barcode_lookups (
+  code         TEXT PRIMARY KEY,
+  name         TEXT,
+  brand        TEXT,
+  image_url    TEXT,
+  image_key    TEXT,
+  source       TEXT,
+  looked_up_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 CREATE TABLE IF NOT EXISTS item_checkouts (
   id              TEXT PRIMARY KEY,

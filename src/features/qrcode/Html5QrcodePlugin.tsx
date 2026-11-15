@@ -6,28 +6,39 @@ import { getErrorMessage } from '@/lib/utils';
 interface Html5QrcodePluginProps {
   paused?: boolean;
   onScanSuccess: (decodedText: string) => void;
+  /** `qr` reads QR codes only (bin labels). `any` also reads product barcodes (UPC/EAN). */
+  formats?: 'qr' | 'any';
+  /** DOM id for the camera view; must be unique if two scanners can be mounted at once. */
+  containerId?: string;
 }
 
-export function Html5QrcodePlugin({ paused, onScanSuccess }: Html5QrcodePluginProps) {
+export function Html5QrcodePlugin({ paused, onScanSuccess, formats = 'qr', containerId = 'html5-qrcode-scanner' }: Html5QrcodePluginProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const containerId = 'html5-qrcode-scanner';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    import('html5-qrcode').then(({ Html5Qrcode }) => {
+    import('html5-qrcode').then(({ Html5Qrcode, Html5QrcodeSupportedFormats: F }) => {
       if (cancelled) return;
 
       setLoading(false);
-      const scanner = new Html5Qrcode(containerId);
+      const scanner = new Html5Qrcode(containerId, {
+        verbose: false,
+        formatsToSupport: formats === 'any'
+          ? [F.QR_CODE, F.UPC_A, F.UPC_E, F.EAN_13, F.EAN_8, F.CODE_128]
+          : [F.QR_CODE],
+        // The browser's native detector reads 1D barcodes far better than the JS fallback.
+        useBarCodeDetectorIfSupported: true,
+      });
       scannerRef.current = scanner;
 
       scanner
         .start(
           { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
+          // Barcodes are wide and short; give them a wide box.
+          { fps: 10, qrbox: formats === 'any' ? { width: 300, height: 180 } : { width: 250, height: 250 } },
           (decodedText) => {
             onScanSuccess(decodedText);
           },
@@ -53,7 +64,7 @@ export function Html5QrcodePlugin({ paused, onScanSuccess }: Html5QrcodePluginPr
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [containerId, formats]);
 
   useEffect(() => {
     const scanner = scannerRef.current;

@@ -36,6 +36,7 @@ import areasRoutes from './routes/areas.js';
 import attachmentsRoutes from './routes/attachments.js';
 import authRoutes from './routes/auth/index.js';
 import avatarRoutes from './routes/avatar.js';
+import barcodesRoutes from './routes/barcodes.js';
 import { batchRoutes } from './routes/batch.js';
 import binItemsRoutes from './routes/binItems.js';
 import binPinsRoutes from './routes/binPins.js';
@@ -248,6 +249,7 @@ export function createApp(opts?: { mountEeRoutes?: (app: express.Express) => voi
   app.use('/api/api-keys', apiKeysRoutes);
   app.use('/api/tags', tagsRoutes);
   app.use('/api/items', itemsRoutes);
+  app.use('/api/barcodes', barcodesRoutes);
   app.use('/api', batchRoutes);
   app.use('/api/v1', internalRoutes);
   app.use('/api/admin', adminRoutes);

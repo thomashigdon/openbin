@@ -8,12 +8,15 @@ interface ItemListRowProps {
   text: string;
   quantity: number | null;
   saved?: boolean;
+  /** Purchase summary shown under the name, e.g. "$12.99 · Amazon". */
+  detail?: string;
+  onDetails?: () => void;
   onCheckout?: () => void;
   onSave: (value: string, quantity: number | null) => void;
   onDelete: () => void;
 }
 
-export function ItemListRow({ text, quantity, saved, onCheckout, onSave, onDelete }: ItemListRowProps) {
+export function ItemListRow({ text, quantity, saved, detail, onDetails, onCheckout, onSave, onDelete }: ItemListRowProps) {
   const [editValue, setEditValue] = useState(text);
   const [qtyDraft, setQtyDraft] = useState(quantity != null ? String(quantity) : '');
   // "committed" tracks the last reconciled value — used as the Escape-revert target,
@@ -54,6 +57,7 @@ export function ItemListRow({ text, quantity, saved, onCheckout, onSave, onDelet
         saved && 'animate-save-flash'
       )}
     >
+      <div className="flex-1 min-w-0">
       <textarea
         rows={1}
         value={editValue}
@@ -73,9 +77,13 @@ export function ItemListRow({ text, quantity, saved, onCheckout, onSave, onDelet
             if (!rowRef.current?.contains(document.activeElement)) handleSave();
           });
         }}
-        className="flex-1 min-w-0 bg-transparent text-[15px] text-[var(--text-primary)] leading-relaxed outline-none resize-none [field-sizing:content] min-h-[1.5em]"
+        className="block w-full bg-transparent text-[15px] text-[var(--text-primary)] leading-relaxed outline-none resize-none [field-sizing:content] min-h-[1.5em]"
         aria-label="Item name"
       />
+      {detail && (
+        <span className="block -mt-0.5 pb-0.5 text-[12px] text-[var(--text-tertiary)] tabular-nums truncate">{detail}</span>
+      )}
+      </div>
 
       <input
         value={qtyDraft}
@@ -104,7 +112,7 @@ export function ItemListRow({ text, quantity, saved, onCheckout, onSave, onDelet
       />
 
       <div className={cn(ACTIONS_COL_WIDTH, 'inline-flex items-center justify-end')}>
-        <ItemListActionMenu onCheckout={onCheckout} onDelete={onDelete} />
+        <ItemListActionMenu onDetails={onDetails} onCheckout={onCheckout} onDelete={onDelete} />
       </div>
     </div>
   );

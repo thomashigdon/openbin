@@ -20,7 +20,22 @@ vi.mock('@/lib/qr', () => ({
 
 vi.mock('@/features/bins/useBins', () => ({
   lookupBinByCodeSafe: vi.fn(),
+  lookupBarcode: vi.fn(),
 }));
+
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({ activeLocationId: 'loc-1' }),
+}));
+
+vi.mock('@/features/usage/recordBinUsage', () => ({
+  recordBinUsage: vi.fn(),
+}));
+
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 vi.mock('@/features/dashboard/scanHistory', () => ({
   recordScan: vi.fn(),
@@ -30,6 +45,7 @@ vi.mock('@/lib/terminology', () => ({
   useTerminology: () => ({
     bin: 'bin',
     Bin: 'Bin',
+    bins: 'bins',
   }),
 }));
 
@@ -55,16 +71,20 @@ vi.mock('@/features/qrcode/Html5QrcodePlugin', () => ({
       <button type="button" onClick={() => onScanSuccess('https://example.com/random')} data-testid="scan-invalid">
         Scan Invalid
       </button>
+      <button type="button" onClick={() => onScanSuccess('012345678905')} data-testid="scan-barcode">
+        Scan Barcode
+      </button>
     </div>
   ),
 }));
 
-import { lookupBinByCodeSafe } from '@/features/bins/useBins';
+import { lookupBarcode, lookupBinByCodeSafe } from '@/features/bins/useBins';
 import { ApiError, apiFetch } from '@/lib/api';
 import { ScanDialog } from '../ScanDialog';
 
 const mockApiFetch = vi.mocked(apiFetch);
 const mockLookup = vi.mocked(lookupBinByCodeSafe);
+const mockLookupBarcode = vi.mocked(lookupBarcode);
 
 const MockApiError = ApiError as unknown as new (status: number, message: string) => Error & { status: number };
 
@@ -85,13 +105,13 @@ beforeEach(() => {
 describe('ScanDialog', () => {
   it('renders scanner when open', () => {
     renderDialog();
-    expect(screen.getByText('Scan QR Code')).toBeTruthy();
+    expect(screen.getByText('Scan')).toBeTruthy();
     expect(screen.getByTestId('qr-scanner')).toBeTruthy();
   });
 
   it('does not render when closed', () => {
     renderDialog(false);
-    expect(screen.queryByText('Scan QR Code')).toBeNull();
+    expect(screen.queryByText('Scan')).toBeNull();
   });
 
   it('shows error for non-bin QR code', async () => {
@@ -171,5 +191,42 @@ describe('ScanDialog', () => {
     await waitFor(() => {
       expect(screen.getByText('No bin found with that code')).toBeTruthy();
     });
+  });
+
+  const match = (binId: string, binName: string) => ({
+    id: `item-${binId}`, name: 'Olive Oil', quantity: null, bin_id: binId, bin_name: binName, bin_icon: '', bin_color: '',
+  });
+
+  it('jumps straight to the bin holding a scanned barcode', async () => {
+    mockLookupBarcode.mockResolvedValue({ code: '012345678905', product: null, matches: [match('B1', 'Pantry')] });
+    const { onOpenChange } = renderDialog();
+    fireEvent.click(screen.getByTestId('scan-barcode'));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/bin/B1'));
+    expect(mockLookupBarcode).toHaveBeenCalledWith('012345678905', 'loc-1');
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('lists every bin when a barcode is in several', async () => {
+    mockLookupBarcode.mockResolvedValue({ code: '012345678905', product: null, matches: [match('B1', 'Pantry'), match('B2', 'Garage Fridge')] });
+    renderDialog();
+    fireEvent.click(screen.getByTestId('scan-barcode'));
+
+    await waitFor(() => expect(screen.getByText('In 2 bins')).toBeTruthy());
+    fireEvent.click(screen.getByText('Garage Fridge'));
+    expect(mockNavigate).toHaveBeenCalledWith('/bin/B2');
+  });
+
+  it('names the product when nothing has the barcode', async () => {
+    mockLookupBarcode.mockResolvedValue({
+      code: '012345678905',
+      product: { name: 'Extra Virgin Olive Oil', brand: 'Bertolli', image_url: null, source: 'upcitemdb' },
+      matches: [],
+    });
+    renderDialog();
+    fireEvent.click(screen.getByTestId('scan-barcode'));
+
+    await waitFor(() => expect(screen.getByText('Not in any bin')).toBeTruthy());
+    expect(screen.getByText(/Extra Virgin Olive Oil isn’t in your inventory yet/)).toBeTruthy();
   });
 });

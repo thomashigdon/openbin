@@ -117,7 +117,7 @@ export function getActionLabel(entry: ActivityLogEntry, t: Terminology): string 
 }
 
 const ITEM_FIELDS = new Set(['items_added', 'items_removed', 'items_renamed', 'items']);
-const SKIP_FIELDS = new Set(['location', 'area_id', 'items_quantity']);
+const SKIP_FIELDS = new Set(['location', 'area_id', 'items_quantity', 'item_details']);
 
 export function renderChangeDiff(entry: ActivityLogEntry): { field: string; old: string; new: string }[] | null {
   if (!entry.changes) return null;
@@ -256,6 +256,11 @@ export function getChangedFieldLabels(entry: ActivityLogEntry, t: Terminology): 
 
     if (field === 'items_quantity') {
       labels.push('quantity');
+      continue;
+    }
+
+    if (field === 'item_details') {
+      labels.push('price & barcode');
       continue;
     }
 

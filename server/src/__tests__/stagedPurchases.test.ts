@@ -182,6 +182,17 @@ describe('sorting and skipping', () => {
     expect(again.status).toBe(409);
   });
 
+  it('the bin item keeps the purchase price, date and store', async () => {
+    const { screws } = await setUpBins();
+    await ingest([amazon('B0SCREWS1', 'DIVANC 550Pcs Wood Screws', { quantity: 2, price: 12.99, purchased_at: '2026-11-02' })]);
+    const [p] = await pending();
+    await request(app).post(`/api/staged-purchases/${p.id}/sort`).set(auth()).send({ binId: screws.id });
+
+    const bin = await request(app).get(`/api/bins/${screws.id}`).set(auth());
+    const item = bin.body.items.find((i: { name: string }) => i.name === p.name);
+    expect(item).toMatchObject({ unit_price: 12.99, purchased_at: '2026-11-02', purchased_from: 'Amazon', barcode: null });
+  });
+
   it('single items go in without a quantity', async () => {
     const { kitchen } = await setUpBins();
     await ingest([amazon('B0KNIFE01', 'Chef Knife 8 Inch', { quantity: 1 })]);

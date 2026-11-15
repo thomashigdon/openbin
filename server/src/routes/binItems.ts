@@ -3,6 +3,7 @@ import { d, generateUuid, query } from '../db.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { isLocationAdmin, requireMemberOrAbove, verifyBinAccess } from '../lib/binAccess.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../lib/httpErrors.js';
+import { ITEM_DETAIL_FIELDS, type ItemDetailsInput, parseItemDetails } from '../lib/itemDetails.js';
 import { assertLocationWritable } from '../lib/planGate.js';
 import { logRouteActivity } from '../lib/routeHelpers.js';
 import { authenticate } from '../middleware/auth.js';
@@ -42,19 +43,28 @@ router.post('/:id/items', asyncHandler(async (req, res) => {
   );
   let nextPos = (maxResult.rows[0]?.max_pos ?? -1) + 1;
 
-  const newItems: Array<{ id: string; name: string; quantity: number | null }> = [];
+  // Validate everything before writing anything.
+  const parsed: Array<{ name: string; quantity: number | null; details: ItemDetailsInput }> = [];
   for (const item of items) {
     const name = typeof item === 'string' ? item : (item as { name: string }).name;
     if (!name || !name.trim()) continue;
     const qty = typeof item === 'object' && item !== null && typeof (item as { quantity?: number }).quantity === 'number'
       ? Math.max(1, Math.floor((item as { quantity: number }).quantity))
       : null;
+    const details = typeof item === 'object' && item !== null ? parseItemDetails(item as Record<string, unknown>) : {};
+    parsed.push({ name: name.trim(), quantity: qty, details });
+  }
+
+  const newItems: Array<{ id: string; name: string; quantity: number | null } & ItemDetailsInput> = [];
+  for (const { name, quantity: qty, details } of parsed) {
     const itemId = generateUuid();
     await query(
-      'INSERT INTO bin_items (id, bin_id, name, quantity, position) VALUES ($1, $2, $3, $4, $5)',
-      [itemId, id, name.trim(), qty, nextPos++]
+      `INSERT INTO bin_items (id, bin_id, name, quantity, position, unit_price, purchased_at, purchased_from, barcode)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [itemId, id, name, qty, nextPos++, details.unit_price ?? null, details.purchased_at ?? null,
+        details.purchased_from ?? null, details.barcode ?? null]
     );
-    newItems.push({ id: itemId, name: name.trim(), quantity: qty });
+    newItems.push({ id: itemId, name, quantity: qty, ...details });
   }
 
   await query(`UPDATE bins SET updated_at = ${d.now()} WHERE id = $1`, [id]);
@@ -190,6 +200,60 @@ router.put('/:id/items/:itemId', asyncHandler(async (req, res) => {
   }
 
   res.json({ id: itemId, name: name.trim(), quantity: newQuantity });
+}));
+
+// PATCH /api/bins/:id/items/:itemId/details — set purchase details / barcode (only the fields given)
+router.patch('/:id/items/:itemId/details', asyncHandler(async (req, res) => {
+  const { id, itemId } = req.params;
+  const details = parseItemDetails((req.body ?? {}) as Record<string, unknown>);
+  const fields = ITEM_DETAIL_FIELDS.filter((f) => details[f] !== undefined);
+  if (fields.length === 0) {
+    throw new ValidationError(`Provide at least one of: ${ITEM_DETAIL_FIELDS.join(', ')}`);
+  }
+
+  const access = await verifyBinEditAccess(id, req.user!.id);
+
+  await assertLocationWritable(access.locationId);
+
+  const itemResult = await query<{ name: string } & Record<(typeof ITEM_DETAIL_FIELDS)[number], unknown>>(
+    `SELECT name, ${ITEM_DETAIL_FIELDS.join(', ')} FROM bin_items WHERE id = $1 AND bin_id = $2 AND deleted_at IS NULL`,
+    [itemId, id]
+  );
+  if (itemResult.rows.length === 0) {
+    throw new NotFoundError('Item not found');
+  }
+  const before = itemResult.rows[0];
+
+  const sets = fields.map((f, i) => `${f} = $${i + 1}`);
+  await query(
+    `UPDATE bin_items SET ${sets.join(', ')}, updated_at = ${d.now()} WHERE id = $${fields.length + 1} AND bin_id = $${fields.length + 2}`,
+    [...fields.map((f) => details[f]), itemId, id]
+  );
+  await query(`UPDATE bins SET updated_at = ${d.now()} WHERE id = $1`, [id]);
+
+  const changed = fields.filter((f) => before[f] !== details[f]);
+  if (changed.length > 0) {
+    const binResult = await query<{ name: string }>('SELECT name FROM bins WHERE id = $1', [id]);
+    logRouteActivity(req, {
+      locationId: access.locationId,
+      action: 'update',
+      entityType: 'bin',
+      entityId: id,
+      entityName: binResult.rows[0]?.name,
+      changes: {
+        item_details: {
+          old: { name: before.name, ...Object.fromEntries(changed.map((f) => [f, before[f]])) },
+          new: { name: before.name, ...Object.fromEntries(changed.map((f) => [f, details[f]])) },
+        },
+      },
+    });
+  }
+
+  const after = await query<Record<string, unknown>>(
+    `SELECT id, name, quantity, ${ITEM_DETAIL_FIELDS.join(', ')} FROM bin_items WHERE id = $1`,
+    [itemId]
+  );
+  res.json(after.rows[0]);
 }));
 
 // PATCH /api/bins/:id/items/:itemId/quantity — update item quantity (stepper)

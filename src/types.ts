@@ -86,6 +86,38 @@ export interface BinItem {
   id: string;
   name: string;
   quantity: number | null;
+  /** Price paid per unit. */
+  unit_price?: number | null;
+  /** YYYY-MM-DD, or an ISO timestamp from an imported order. */
+  purchased_at?: string | null;
+  purchased_from?: string | null;
+  /** UPC/EAN digits. */
+  barcode?: string | null;
+}
+
+export type ItemDetails = Pick<BinItem, 'unit_price' | 'purchased_at' | 'purchased_from' | 'barcode'>;
+
+export interface BarcodeProduct {
+  name: string;
+  brand: string | null;
+  image_url: string | null;
+  source: string;
+}
+
+export interface BarcodeMatch {
+  id: string;
+  name: string;
+  quantity: number | null;
+  bin_id: string;
+  bin_name: string;
+  bin_icon: string;
+  bin_color: string;
+}
+
+export interface BarcodeLookupResult {
+  code: string;
+  product: BarcodeProduct | null;
+  matches: BarcodeMatch[];
 }
 
 export interface ItemCheckout {

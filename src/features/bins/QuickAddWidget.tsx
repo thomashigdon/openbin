@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, Loader2, Plus, Sparkles } from 'lucide-react';
+import { Check, ChevronLeft, Loader2, Plus, ScanBarcode, Sparkles } from 'lucide-react';
 import { useRef } from 'react';
 import type { LabelThreshold } from '@/components/ui/ai-progress-bar';
 import { AiProgressBar } from '@/components/ui/ai-progress-bar';
@@ -25,6 +25,8 @@ interface QuickAddWidgetProps {
   /** When true, the input shows a richer educational placeholder. Intended for the
    *  empty-list state inside `inline` mode. */
   isEmptyList?: boolean;
+  /** Shows a scan button that adds an item from its product barcode. */
+  onScanBarcode?: () => void;
 }
 
 const QUICK_ADD_LABELS: LabelThreshold[] = [
@@ -34,7 +36,7 @@ const QUICK_ADD_LABELS: LabelThreshold[] = [
   [75, 'Almost done...'],
 ];
 
-export function QuickAddWidget({ quickAdd, aiEnabled, aiGated, onUpgrade, dictation, canTranscribe, variant = 'card', isEmptyList }: QuickAddWidgetProps) {
+export function QuickAddWidget({ quickAdd, aiEnabled, aiGated, onUpgrade, dictation, canTranscribe, variant = 'card', isEmptyList, onScanBarcode }: QuickAddWidgetProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const isRecording = dictation?.state === 'recording';
   const isInline = variant === 'inline';
@@ -104,6 +106,18 @@ export function QuickAddWidget({ quickAdd, aiEnabled, aiGated, onUpgrade, dictat
                 aria-label="Add item"
               >
                 <Plus className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          )}
+          {!isRecording && onScanBarcode && (
+            <Tooltip content="Scan barcode">
+              <button
+                type="button"
+                onClick={onScanBarcode}
+                className="shrink-0 flex items-center justify-center size-11 rounded-[var(--radius-lg)] text-[var(--text-tertiary)] hover:bg-[var(--bg-active)] transition-colors"
+                aria-label="Scan barcode"
+              >
+                <ScanBarcode className="h-4 w-4" />
               </button>
             </Tooltip>
           )}

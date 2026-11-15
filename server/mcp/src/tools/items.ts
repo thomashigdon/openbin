@@ -7,6 +7,11 @@ import { type BinDetail, resolveItemId } from "../resolve-item.js";
 interface Item {
   id: string;
   name: string;
+  quantity: number | null;
+  unit_price: number | null;
+  purchased_at: string | null;
+  purchased_from: string | null;
+  barcode: string | null;
   bin_id: string;
   bin_name: string;
   bin_icon: string;
@@ -22,10 +27,26 @@ interface AddItemsResponse {
   items: Array<{ id: string; name: string }>;
 }
 
+interface BarcodeLookupResponse {
+  code: string;
+  product: { name: string; brand: string | null; source: string } | null;
+  matches: Array<{ id: string; name: string; quantity: number | null; bin_id: string; bin_name: string }>;
+}
+
+/** " — $12.99 ea · Amazon · 2026-11-02 · barcode 012345678905", or "" when the item has none. */
+function itemDetailText(item: Pick<Item, "unit_price" | "purchased_at" | "purchased_from" | "barcode">): string {
+  const parts: string[] = [];
+  if (item.unit_price != null) parts.push(`$${item.unit_price.toFixed(2)} ea`);
+  if (item.purchased_from) parts.push(item.purchased_from);
+  if (item.purchased_at) parts.push(item.purchased_at.slice(0, 10));
+  if (item.barcode) parts.push(`barcode ${item.barcode}`);
+  return parts.length ? ` — ${parts.join(" · ")}` : "";
+}
+
 export function registerItemTools(server: McpServer, api: ApiClient) {
   server.tool(
     "search_items",
-    "Search items across all bins in a location",
+    "Search items across all bins in a location. Matches item names, bin names, and exact barcodes. Shows any price, store, purchase date and barcode.",
     {
       location_id: z.string().describe("Location UUID (required)"),
       q: z.string().optional().describe("Search text"),
@@ -47,7 +68,7 @@ export function registerItemTools(server: McpServer, api: ApiClient) {
       }
 
       const lines = data.results.map(
-        (item) => `- **${item.name}** [${item.id}] in bin "${item.bin_name}" (bin_id: ${item.bin_id})`,
+        (item) => `- **${item.name}**${item.quantity ? ` ×${item.quantity}` : ""} [${item.id}] in bin "${item.bin_name}" (bin_id: ${item.bin_id})${itemDetailText(item)}`,
       );
 
       return {
@@ -194,6 +215,57 @@ export function registerItemTools(server: McpServer, api: ApiClient) {
       return {
         content: [{ type: "text" as const, text: `Items reordered (${resolvedIds!.length} items).` }],
       };
+    }),
+  );
+  server.tool(
+    "set_item_details",
+    "Set an item's purchase details and/or barcode: price per unit, purchase date, store. Only the fields given change; pass null to clear one. Provide item_id or item_name (not both).",
+    {
+      bin_id: z.string().describe("Bin UUID or 6-character short code"),
+      item_id: z.string().optional().describe("Item UUID"),
+      item_name: z.string().optional().describe("Item name (case-insensitive match)"),
+      unit_price: z.number().min(0).nullable().optional().describe("Price paid per unit, in dollars"),
+      purchased_at: z.string().nullable().optional().describe("Purchase date, YYYY-MM-DD"),
+      purchased_from: z.string().nullable().optional().describe("Store or seller, e.g. 'Home Depot'"),
+      barcode: z.string().nullable().optional().describe("UPC/EAN digits (8-14)"),
+    },
+    withErrorHandling(async ({ bin_id, item_id, item_name, ...details }) => {
+      bin_id = await resolveBinId(api, bin_id);
+      const resolved = await resolveItemId(api, bin_id, item_id, item_name);
+      if ("error" in resolved) {
+        return { content: [{ type: "text" as const, text: resolved.error }], isError: true };
+      }
+
+      const item = await api.patch<Item>(
+        `/api/bins/${encodeURIComponent(bin_id)}/items/${encodeURIComponent(resolved.id)}/details`,
+        details,
+      );
+
+      return {
+        content: [{ type: "text" as const, text: `Updated "${item.name}"${itemDetailText(item) || " — no details set"}.` }],
+      };
+    }),
+  );
+
+  server.tool(
+    "lookup_barcode",
+    "Find which bins hold items with a UPC/EAN barcode, and what product the barcode is (from public product databases).",
+    {
+      location_id: z.string().describe("Location UUID (required)"),
+      barcode: z.string().describe("UPC/EAN digits (8-14)"),
+    },
+    withErrorHandling(async ({ location_id, barcode }) => {
+      const params = new URLSearchParams({ location_id, lookup: "true" });
+      const data = await api.get<BarcodeLookupResponse>(`/api/barcodes/${encodeURIComponent(barcode)}?${params}`);
+
+      const product = data.product
+        ? `Product: ${data.product.brand ? `${data.product.brand} ` : ""}${data.product.name} (via ${data.product.source})`
+        : "Product: not found in the public databases";
+      const where = data.matches.length
+        ? data.matches.map((m) => `- **${m.name}**${m.quantity ? ` ×${m.quantity}` : ""} [${m.id}] in bin "${m.bin_name}" (bin_id: ${m.bin_id})`).join("\n")
+        : "No items in this location have this barcode.";
+
+      return { content: [{ type: "text" as const, text: `Barcode ${data.code}\n${product}\n\n${where}` }] };
     }),
   );
 }

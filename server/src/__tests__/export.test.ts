@@ -39,6 +39,42 @@ describe('GET /api/locations/:id/export', () => {
     expect(res.body.areas).toBeDefined();
   });
 
+  it('carries item purchase details and barcodes through export and import', async () => {
+    const { token } = await createTestUser(app);
+    const auth = { Authorization: `Bearer ${token}` };
+    const location = await createTestLocation(app, token);
+    const bin = await createTestBin(app, token, location.id, { name: 'Pantry' });
+    await request(app).post(`/api/bins/${bin.id}/items`).set(auth)
+      .send({ items: [{ name: 'Olive Oil', quantity: 2, unit_price: 8.5, purchased_at: '2026-10-01', purchased_from: 'Costco', barcode: '041244001234' }, 'Salt'] });
+
+    const exported = await request(app).get(`/api/locations/${location.id}/export`).set(auth);
+    expect(exported.body.bins[0].items).toEqual([
+      { name: 'Olive Oil', quantity: 2, unitPrice: 8.5, purchasedAt: '2026-10-01', purchasedFrom: 'Costco', barcode: '041244001234' },
+      'Salt',
+    ]);
+
+    const target = await createTestLocation(app, token, 'Copy');
+    const imported = await request(app).post(`/api/locations/${target.id}/import`).set(auth)
+      .send({ bins: exported.body.bins, mode: 'merge' });
+    expect(imported.status).toBe(200);
+    const bins = await request(app).get(`/api/bins?location_id=${target.id}`).set(auth);
+    expect(bins.body.results[0].items[0]).toMatchObject({ name: 'Olive Oil', unit_price: 8.5, purchased_at: '2026-10-01', purchased_from: 'Costco', barcode: '041244001234' });
+  });
+
+  it('imports items with malformed purchase details by dropping just those fields', async () => {
+    const { token } = await createTestUser(app);
+    const auth = { Authorization: `Bearer ${token}` };
+    const location = await createTestLocation(app, token);
+    const now = new Date().toISOString();
+    const res = await request(app).post(`/api/locations/${location.id}/import`).set(auth).send({
+      bins: [{ id: 'x1', name: 'Box', items: [{ name: 'Tape', unitPrice: -5, barcode: 'nope', purchasedFrom: 'Target' }], notes: '', tags: [], icon: '', color: '', createdAt: now, updatedAt: now, photos: [] }],
+      mode: 'merge',
+    });
+    expect(res.status).toBe(200);
+    const bins = await request(app).get(`/api/bins?location_id=${location.id}`).set(auth);
+    expect(bins.body.results[0].items[0]).toMatchObject({ name: 'Tape', unit_price: null, barcode: null, purchased_from: 'Target' });
+  });
+
   it('exports empty location', async () => {
     const { token } = await createTestUser(app);
     const location = await createTestLocation(app, token);

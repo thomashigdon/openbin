@@ -27,7 +27,7 @@ router.get('/', asyncHandler(async (req, res) => {
 
   if (searchQuery?.trim()) {
     params.push(searchQuery.trim());
-    whereClause = `AND (${d.fuzzyMatch('bi.name', `$${params.length}`)} OR ${d.fuzzyMatch('b.name', `$${params.length}`)})`;
+    whereClause = `AND (${d.fuzzyMatch('bi.name', `$${params.length}`)} OR ${d.fuzzyMatch('b.name', `$${params.length}`)} OR bi.barcode = $${params.length})`;
   }
 
   const baseQuery = `
@@ -70,8 +70,12 @@ router.get('/', asyncHandler(async (req, res) => {
     bin_name: string;
     bin_icon: string;
     bin_color: string;
+    unit_price: number | null;
+    purchased_at: string | null;
+    purchased_from: string | null;
+    barcode: string | null;
   }>(
-    `SELECT bi.id, bi.name, bi.quantity, bi.bin_id, b.name AS bin_name, b.icon AS bin_icon, b.color AS bin_color
+    `SELECT bi.id, bi.name, bi.quantity, bi.unit_price, bi.purchased_at, bi.purchased_from, bi.barcode, bi.bin_id, b.name AS bin_name, b.icon AS bin_icon, b.color AS bin_color
      ${baseQuery}
      ORDER BY ${orderBy}
      LIMIT $${params.length - 1} OFFSET $${params.length}`,

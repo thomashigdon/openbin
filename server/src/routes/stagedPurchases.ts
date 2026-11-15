@@ -330,10 +330,11 @@ async function sortInto(q: TxQueryFn, row: StagedRow, binId: string, userId: str
   );
   const itemId = generateUuid();
   const now = new Date().toISOString();
+  // The item keeps what the purchase recorded, so the inventory knows what it's worth.
   await q(
-    `INSERT INTO bin_items (id, bin_id, name, quantity, position, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $6)`,
-    [itemId, binId, name, quantity, (pos.rows[0]?.max_pos ?? -1) + 1, now],
+    `INSERT INTO bin_items (id, bin_id, name, quantity, position, created_at, updated_at, unit_price, purchased_at, purchased_from)
+     VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9)`,
+    [itemId, binId, name, quantity, (pos.rows[0]?.max_pos ?? -1) + 1, now, row.price, row.purchased_at, row.store || null],
   );
   await q('UPDATE bins SET updated_at = $1 WHERE id = $2', [now, binId]);
   await q(
