@@ -18,6 +18,17 @@ vi.mock('@/features/bins/useBins', () => ({
   useBinList: vi.fn(() => ({ bins: [], isLoading: false })),
   addBin: vi.fn().mockResolvedValue({ id: 'bin-new', name: 'Plumbing Parts' }),
 }));
+vi.mock('@/lib/terminology', () => ({
+  useTerminology: () => ({ Area: 'Area' }),
+}));
+vi.mock('@/features/areas/AreaPicker', () => ({
+  AreaPicker: ({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) => (
+    <select aria-label="New bin area" value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
+      <option value="">No area</option>
+      <option value="area-garage">Garage</option>
+    </select>
+  ),
+}));
 vi.mock('../useStagedPurchases', () => ({
   useStagedPurchases: vi.fn(() => ({ purchases: [], isLoading: false })),
   sortPurchase: vi.fn().mockResolvedValue({ item: { id: 'i1', bin_id: 'bin-k', bin_name: 'Kitchen Tools', name: 'x' } }),
@@ -140,10 +151,21 @@ describe('ToBeSortedPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Choose a bin…' }));
     fireEvent.change(screen.getByPlaceholderText('Search bins or name a new one...'), { target: { value: '  Plumbing Parts ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create bin “Plumbing Parts”' }));
-    await waitFor(() => expect(addBin).toHaveBeenCalledWith({ name: 'Plumbing Parts', locationId: 'loc-1' }));
+    await waitFor(() => expect(addBin).toHaveBeenCalledWith({ name: 'Plumbing Parts', locationId: 'loc-1', areaId: null }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Put here' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Put here' }));
     await waitFor(() => expect(sortPurchase).toHaveBeenCalledWith('p1', 'bin-new', undefined));
+  });
+
+  it('puts a new bin in the chosen area', async () => {
+    vi.mocked(useStagedPurchases).mockReturnValue({ purchases: [purchase({ suggestions: [] })], isLoading: false, error: null });
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose a bin…' }));
+    expect(screen.queryByLabelText('New bin area')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Search bins or name a new one...'), { target: { value: 'Plumbing Parts' } });
+    fireEvent.change(screen.getByLabelText('New bin area'), { target: { value: 'area-garage' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create bin “Plumbing Parts”' }));
+    await waitFor(() => expect(addBin).toHaveBeenCalledWith({ name: 'Plumbing Parts', locationId: 'loc-1', areaId: 'area-garage' }));
   });
 
   it('does not offer to create a bin that already exists', () => {

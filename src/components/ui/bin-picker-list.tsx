@@ -1,5 +1,5 @@
 import { Check, Loader2, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useBinList } from '@/features/bins/useBins';
 import { resolveColor } from '@/lib/colorPalette';
 import { resolveIcon } from '@/lib/iconMap';
@@ -21,6 +21,8 @@ export interface BinPickerListProps {
    * has that exact name. Resolves to the new bin's id, which is then selected; rejects to leave things as they were.
    */
   onCreate?: (name: string) => Promise<string>;
+  /** Extra fields for the new bin (e.g. its area), shown above the "Create bin" row while it is offered. */
+  createFields?: ReactNode;
 }
 
 export function BinPickerList({
@@ -32,6 +34,7 @@ export function BinPickerList({
   paused,
   emptyText = 'No other bins available',
   onCreate,
+  createFields,
 }: BinPickerListProps) {
   const { bins } = useBinList(undefined, 'name', undefined, paused);
   const [creating, setCreating] = useState(false);
@@ -107,6 +110,7 @@ export function BinPickerList({
           })
         )}
       </div>
+      {canCreate && createFields}
       {canCreate && (
         <button
           type="button"

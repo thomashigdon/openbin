@@ -12,14 +12,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SkeletonList } from '@/components/ui/skeleton-list';
 import { useToast } from '@/components/ui/toast';
 import { Tooltip } from '@/components/ui/tooltip';
+import { AreaPicker } from '@/features/areas/AreaPicker';
 import { addBin } from '@/features/bins/useBins';
 import { useAuth } from '@/lib/auth';
 import { BulkActionBar } from '@/lib/bulk/BulkActionBar';
 import { BulkUpdateDialog } from '@/lib/bulk/BulkUpdateDialog';
 import { resolveColor } from '@/lib/colorPalette';
 import { resolveIcon } from '@/lib/iconMap';
+import { useTerminology } from '@/lib/terminology';
 import { usePermissions } from '@/lib/usePermissions';
-import { cn, formatDate, pluralize } from '@/lib/utils';
+import { cn, formatDate, pluralize, sectionHeader } from '@/lib/utils';
 import type { BinSuggestion, StagedPurchase } from '@/types';
 import {
   addPurchaseFromPhoto,
@@ -221,6 +223,7 @@ export function ToBeSortedPage() {
   const { activeLocationId } = useAuth();
   const { canWrite, canCreateBin } = usePermissions();
   const { showToast } = useToast();
+  const t = useTerminology();
   const locationId = activeLocationId ?? null;
   const [tab, setTab] = useState<StagedStatus>('pending');
   const { purchases, isLoading } = useStagedPurchases(locationId, tab);
@@ -229,6 +232,8 @@ export function ToBeSortedPage() {
   const [picker, setPicker] = useState<{ ids: string[]; name?: string } | null>(null);
   const [pickedBin, setPickedBin] = useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = useState('');
+  // Kept between picks: a run of new bins usually goes in the same room.
+  const [newBinAreaId, setNewBinAreaId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -322,7 +327,7 @@ export function ToBeSortedPage() {
     if (!locationId) throw new Error('No location');
     try {
       // No success toast: the new bin shows up selected, and a toast would cover "Put here" on phones.
-      const bin = await addBin({ name, locationId });
+      const bin = await addBin({ name, locationId, areaId: newBinAreaId });
       return bin.id;
     } catch (err) {
       showToast({ message: errorMessage(err, 'Could not create that bin'), variant: 'error' });
@@ -484,6 +489,12 @@ export function ToBeSortedPage() {
           paused={picker === null}
           emptyText="No bins yet"
           onCreate={canCreateBin ? handleCreateBin : undefined}
+          createFields={
+            <div className="space-y-2">
+              <span className={sectionHeader}>{t.Area} for the new bin</span>
+              <AreaPicker locationId={locationId ?? undefined} value={newBinAreaId} onChange={setNewBinAreaId} />
+            </div>
+          }
         />
       </BulkUpdateDialog>
     </div>
